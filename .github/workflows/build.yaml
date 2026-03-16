@@ -17,8 +17,8 @@ jobs:
       # CLI call to simulated build process
       - name: Run Build
         run: |
-          appName = "Test App"
-          ./build.sh --platform android --project-name ${$appName}
+          appName="Test App"
+          ./build.sh --platform android --project-name "$appName"
 
       # CLI call to simulated upload process
       - name: Upload
