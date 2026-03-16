@@ -3,15 +3,21 @@
 
 name: Run Build
 
+# Utilizing optional custom input parameters 
 on:
   workflow_dispatch:
+    inputs:
+      app_name:
+        description: "Custom name for the built application"
+        required: true
+        default: "Test App"
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     env:
-      APP_NAME: "Test App"
+      APP_NAME: ${{ inputs.app_name }}
       UPLOAD_TOKEN: ${{ secrets.UPLOAD_TOKEN }}
 
     defaults:
