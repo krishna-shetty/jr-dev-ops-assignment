@@ -1,0 +1,26 @@
+name: Run Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./cli
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+        
+      # CLI call to simulated build process
+      - name: Run Build
+        run: |
+          appName = "Test App"
+          ./build.sh --platform android --project-name ${$appName}
+
+      # CLI call to simulated upload process
+      - name: Upload
+        run: |
+          ./upload.sh build/android"
