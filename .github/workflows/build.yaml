@@ -1,3 +1,6 @@
+# NOTE: This workflow assumes a Unix-based runner (Linux/macOS) since it relies
+# on Bash scripts and `chmod` for execution.
+
 name: Run Build
 
 on:
@@ -13,6 +16,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
+
+      # Pretty self-explanatory: give execute permission to runner 
+      - name: Make scripts executable
+        run: |
+          chmod +x build.sh
+          chmod +x upload.sh
         
       # CLI call to simulated build process
       - name: Run Build
