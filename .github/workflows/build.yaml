@@ -12,6 +12,7 @@ jobs:
 
     env:
       APP_NAME: "Test App"
+      UPLOAD_TOKEN: ${{ secrets.UPLOAD_TOKEN }}
 
     defaults:
       run:
