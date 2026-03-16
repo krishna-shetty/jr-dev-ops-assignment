@@ -32,4 +32,4 @@ jobs:
       # CLI call to simulated upload process
       - name: Upload
         run: |
-          ./upload.sh build/Android"
+          ./upload.sh build/Android
