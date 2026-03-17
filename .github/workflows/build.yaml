@@ -49,10 +49,15 @@ jobs:
           chmod +x build.sh
           chmod +x upload.sh
 
-      # Follows semantic versioning 2.0.0
-      # Employs MAJOR.MINOR.PATCH versioning with ownership (intent) for incompatability and
-      # additional functionality falling (MAJOR.MINOR) on development engineers availing tags
-      # CI pipeline self-determines patch number (PATCH) via GitHub run number
+      # Follows semantic versioning 2.0.0 in spirit, using MAJOR.MINOR tags
+      # (e.g. v1.2) as explicit engineer-owned release intent.
+      #
+      # PATCH is derived from commit distance since the nearest reachable
+      # version tag on main, so it increments naturally and resets when a new
+      # MAJOR.MINOR tag is pushed.
+      #
+      # Version-resolution notes below were generated with Claude Sonnet and then
+      # reviewed/edited manually for this workflow.
       - name: Compute app name and version
         shell: bash
         run: |
@@ -74,42 +79,87 @@ jobs:
 
           REF_NAME="${GITHUB_REF_NAME}"
           REF_TYPE="${GITHUB_REF_TYPE}"
+          EVENT_NAME="${GITHUB_EVENT_NAME}"
 
-          SAFE_BRANCH=""
+          BRANCH=""
           BRANCH_SUFFIX=""
           SHOULD_UPLOAD="false"
 
-          if [[ "${REF_TYPE}" == "tag" ]]; then
-            VERSION_PREFIX_TAG="${REF_NAME#v}"
-            VERSION="${VERSION_PREFIX_TAG}.${GITHUB_RUN_NUMBER}"
+          git fetch origin main --quiet
 
-            git fetch origin main --quiet
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+            BRANCH="${{ github.head_ref }}"
+          elif [[ "${REF_TYPE}" == "tag" ]]; then
+            # Tag pushes are detached refs; we treat them as promoted artifacts
+            # associated with main for naming/version lookup purposes.
+            BRANCH="main"
+          else
+            BRANCH="${REF_NAME}"
+          fi
 
-            # Tagged releases should only upload if the tagged commit belongs to main
-            # (production)
-            if git merge-base --is-ancestor "${GITHUB_SHA}" "origin/main"; then
-              SHOULD_UPLOAD="true"
+          # Version resolution logic (initial version of this approach was generated
+          # with Claude, then reviewed and adjusted manually):
+          #
+          # - Resolve version lineage from the nearest reachable vMAJOR.MINOR tag on main
+          # - Ignore tags not contained in origin/main
+          # - Fall back to version_prefix input if no promoted tag exists yet
+          #
+          # git describe returns the nearest reachable tag and, in --long form,
+          # includes the commit count since that tag.
+          DESCRIBE_LONG="$(git describe --tags --match 'v[0-9]*.[0-9]*' --long origin/main 2>/dev/null || true)"
+          RAW_TAG="$(git describe --tags --match 'v[0-9]*.[0-9]*' --abbrev=0 origin/main 2>/dev/null || true)"
+
+          if [[ -n "${RAW_TAG}" ]]; then
+            VERSION_PREFIX="${RAW_TAG#v}"
+            PATCH="$(echo "${DESCRIBE_LONG}" | sed -E 's/.*-([0-9]+)-g[0-9a-f]+/\1/')"
+          else
+            VERSION_PREFIX="${VERSION_PREFIX_INPUT}"
+            PATCH="$(git rev-list --count origin/main)"
+          fi
+
+          VERSION="${VERSION_PREFIX}.${PATCH}"
+
+          # Upload policy:
+          # - upload on any push to main
+          # - do not upload for PRs or non-main branch pushes
+          if [[ "${EVENT_NAME}" == "push" && "${REF_TYPE}" == "branch" && "${BRANCH}" == "main" ]]; then
+            SHOULD_UPLOAD="true"
+          fi
+
+          # Naming policy:
+          # - main uses clean artifact naming
+          # - non-main branches get a suffix
+          # - workflow_dispatch on main gets -dev to distinguish ad hoc manual builds
+          if [[ "${BRANCH}" == "main" ]]; then
+            if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+              BRANCH_SUFFIX="-dev"
             fi
           else
-            VERSION="${VERSION_PREFIX_INPUT}.${GITHUB_RUN_NUMBER}"
-
-            if [[ "${REF_NAME}" != "main" ]]; then
-              SAFE_BRANCH="$(echo "${REF_NAME}" | tr '/' '-')"
-              BRANCH_SUFFIX="-${SAFE_BRANCH}"
-            fi
+            SAFE_BRANCH="$(echo "${BRANCH}" | tr '/' '-')"
+            BRANCH_SUFFIX="-${SAFE_BRANCH}"
           fi
 
           PROJECT_NAME="${BASE_APP_NAME}${BRANCH_SUFFIX}"
           ARTIFACT_NAME="${PROJECT_NAME}-${VERSION}"
           ARTIFACT_PATH="build/Android/${ARTIFACT_NAME}.apk"
 
-          echo "PROJECT_NAME=${PROJECT_NAME}" >> "$GITHUB_ENV"
-          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
-          echo "SAFE_BRANCH=${SAFE_BRANCH}" >> "$GITHUB_ENV"
-          echo "BRANCH_SUFFIX=${BRANCH_SUFFIX}" >> "$GITHUB_ENV"
+          echo "PROJECT_NAME=${PROJECT_NAME}"   >> "$GITHUB_ENV"
+          echo "VERSION=${VERSION}"             >> "$GITHUB_ENV"
+          echo "BRANCH=${BRANCH}"               >> "$GITHUB_ENV"
           echo "ARTIFACT_NAME=${ARTIFACT_NAME}" >> "$GITHUB_ENV"
           echo "ARTIFACT_PATH=${ARTIFACT_PATH}" >> "$GITHUB_ENV"
           echo "SHOULD_UPLOAD=${SHOULD_UPLOAD}" >> "$GITHUB_ENV"
+
+          # ── Job summary ────────────────────────────────────────────────────
+          # formatted with Claude Sonnet
+          echo "## Build Info"                           >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field   | Value |"                     >> "$GITHUB_STEP_SUMMARY"
+          echo "| ------- | ----- |"                     >> "$GITHUB_STEP_SUMMARY"
+          echo "| Branch  | \`${BRANCH}\` |"             >> "$GITHUB_STEP_SUMMARY"
+          echo "| Version | \`${VERSION}\` |"            >> "$GITHUB_STEP_SUMMARY"
+          echo "| App     | \`${PROJECT_NAME}\` |"       >> "$GITHUB_STEP_SUMMARY"
+          echo "| Upload  | \`${SHOULD_UPLOAD}\` |"      >> "$GITHUB_STEP_SUMMARY"
+          echo "| Trigger | \`${EVENT_NAME}\` |"         >> "$GITHUB_STEP_SUMMARY"
 
       # CLI call to simulated build process
       - name: Run Build
@@ -118,6 +168,6 @@ jobs:
 
       # CLI call to simulated upload process
       - name: Upload
-        if: github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && env.SHOULD_UPLOAD == 'true'
+        if: env.SHOULD_UPLOAD == 'true'
         run: |
           ./upload.sh android "$ARTIFACT_PATH"
