@@ -1,7 +1,7 @@
 # NOTE: This workflow assumes a Unix-based runner (Linux/macOS) since it relies
 # on Bash scripts and `chmod` for execution.
 
-name: Run Build
+name: Build pipeline
 
 # Utilizing optional custom input parameters
 on:
@@ -32,7 +32,33 @@ on:
       - "v*"
 
 jobs:
+  # Static analysis
+  # Cheapest tollgate — run against source code before anything else.
+  # Fail fast, fail hard. To avoid wasting time on build.
+  static-analysis:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        platform: [Android, iOS]
+
+    defaults:
+      run:
+        working-directory: ./cli
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+        # Pretty self-explanatory: give execute permission to runner
+      - name: Make scripts executable
+        run: chmod +x scan_static.sh
+
+      - name: Run static analysis
+        run: ./scan_static.sh --platform "${{ matrix.platform}}"
+
   build:
+    needs: static-analysis
     runs-on: ubuntu-latest
 
     strategy:
@@ -54,7 +80,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Pretty self-explanatory: give execute permission to runner
       - name: Make scripts executable
         run: |
           chmod +x build.sh
