@@ -30,8 +30,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        platform: [Android, iOS]
+
     env:
       UPLOAD_TOKEN: ${{ secrets.UPLOAD_TOKEN }}
+      PLATFORM: ${{ matrix.platform }}
 
     defaults:
       run:
@@ -139,9 +144,14 @@ jobs:
             BRANCH_SUFFIX="-${SAFE_BRANCH}"
           fi
 
+          EXTENSION="apk"
+          if [[ "${PLATFORM}" == "iOS" ]]; then
+            EXTENSION="ipa"
+          fi
+
           PROJECT_NAME="${BASE_APP_NAME}${BRANCH_SUFFIX}"
           ARTIFACT_NAME="${PROJECT_NAME}-${VERSION}"
-          ARTIFACT_PATH="build/Android/${ARTIFACT_NAME}.apk"
+          ARTIFACT_PATH="build/${PLATFORM}/${ARTIFACT_NAME}.${EXTENSION}"
 
           echo "PROJECT_NAME=${PROJECT_NAME}"   >> "$GITHUB_ENV"
           echo "VERSION=${VERSION}"             >> "$GITHUB_ENV"
@@ -153,21 +163,29 @@ jobs:
           # ── Job summary ────────────────────────────────────────────────────
           # formatted with Claude Sonnet
           echo "## Build Info"                           >> "$GITHUB_STEP_SUMMARY"
-          echo "| Field   | Value |"                     >> "$GITHUB_STEP_SUMMARY"
-          echo "| ------- | ----- |"                     >> "$GITHUB_STEP_SUMMARY"
-          echo "| Branch  | \`${BRANCH}\` |"             >> "$GITHUB_STEP_SUMMARY"
-          echo "| Version | \`${VERSION}\` |"            >> "$GITHUB_STEP_SUMMARY"
-          echo "| App     | \`${PROJECT_NAME}\` |"       >> "$GITHUB_STEP_SUMMARY"
-          echo "| Upload  | \`${SHOULD_UPLOAD}\` |"      >> "$GITHUB_STEP_SUMMARY"
-          echo "| Trigger | \`${EVENT_NAME}\` |"         >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field    | Value |"                    >> "$GITHUB_STEP_SUMMARY"
+          echo "| -------- | ----- |"                    >> "$GITHUB_STEP_SUMMARY"
+          echo "| Platform | \`${PLATFORM}\` |"          >> "$GITHUB_STEP_SUMMARY"
+          echo "| Branch   | \`${BRANCH}\` |"            >> "$GITHUB_STEP_SUMMARY"
+          echo "| Version  | \`${VERSION}\` |"           >> "$GITHUB_STEP_SUMMARY"
+          echo "| App      | \`${PROJECT_NAME}\` |"      >> "$GITHUB_STEP_SUMMARY"
+          echo "| Upload   | \`${SHOULD_UPLOAD}\` |"     >> "$GITHUB_STEP_SUMMARY"
+          echo "| Trigger  | \`${EVENT_NAME}\` |"        >> "$GITHUB_STEP_SUMMARY"
 
       # CLI call to simulated build process
       - name: Run Build
         run: |
-          ./build.sh --platform Android --project-name "$PROJECT_NAME" --version "$VERSION"
+          ./build.sh --platform "$PLATFORM" --project-name "$PROJECT_NAME" --version "$VERSION"
 
       # CLI call to simulated upload process
       - name: Upload
         if: env.SHOULD_UPLOAD == 'true'
+        shell: bash
         run: |
-          ./upload.sh android "$ARTIFACT_PATH"
+          UPLOAD_PLATFORM="android"
+
+          if [[ "${PLATFORM}" == "iOS" ]]; then
+            UPLOAD_PLATFORM="ios"
+          fi
+
+          ./upload.sh "$UPLOAD_PLATFORM" "$ARTIFACT_PATH"
