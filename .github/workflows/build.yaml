@@ -3,21 +3,34 @@
 
 name: Run Build
 
-# Utilizing optional custom input parameters 
+# Utilizing optional custom input parameters
 on:
   workflow_dispatch:
     inputs:
       app_name:
         description: "Custom name for the built application"
         required: true
-        default: "Test App"
+        default: "PrismsVR"
+      version_prefix:
+        description: "Fallback MAJOR.MINOR version when build is not tag-driven"
+        required: false
+        default: "1.0"
+
+  pull_request:
+    branches:
+      - main
+
+  push:
+    branches:
+      - "**"
+    tags:
+      - "v*"
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     env:
-      APP_NAME: ${{ inputs.app_name }}
       UPLOAD_TOKEN: ${{ secrets.UPLOAD_TOKEN }}
 
     defaults:
@@ -26,20 +39,85 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      # Pretty self-explanatory: give execute permission to runner 
+      # Pretty self-explanatory: give execute permission to runner
       - name: Make scripts executable
         run: |
           chmod +x build.sh
           chmod +x upload.sh
-        
+
+      # Follows semantic versioning 2.0.0
+      # Employs MAJOR.MINOR.PATCH versioning with ownership (intent) for incompatability and
+      # additional functionality falling (MAJOR.MINOR) on development engineers availing tags
+      # CI pipeline self-determines patch number (PATCH) via GitHub run number
+      - name: Compute app name and version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          DEFAULT_APP_NAME="PrismsVR"
+          DEFAULT_VERSION_PREFIX="1.0"
+
+          BASE_APP_NAME="${{ inputs.app_name || '' }}"
+          VERSION_PREFIX_INPUT="${{ inputs.version_prefix || '' }}"
+
+          if [[ -z "${BASE_APP_NAME}" ]]; then
+            BASE_APP_NAME="${DEFAULT_APP_NAME}"
+          fi
+
+          if [[ -z "${VERSION_PREFIX_INPUT}" ]]; then
+            VERSION_PREFIX_INPUT="${DEFAULT_VERSION_PREFIX}"
+          fi
+
+          REF_NAME="${GITHUB_REF_NAME}"
+          REF_TYPE="${GITHUB_REF_TYPE}"
+
+          SAFE_BRANCH=""
+          BRANCH_SUFFIX=""
+          SHOULD_UPLOAD="false"
+
+          if [[ "${REF_TYPE}" == "tag" ]]; then
+            VERSION_PREFIX_TAG="${REF_NAME#v}"
+            VERSION="${VERSION_PREFIX_TAG}.${GITHUB_RUN_NUMBER}"
+
+            git fetch origin main --quiet
+
+            # Tagged releases should only upload if the tagged commit belongs to main 
+            # (production)
+            if git merge-base --is-ancestor "${GITHUB_SHA}" "origin/main"; then
+              SHOULD_UPLOAD="true"
+            fi
+          else
+            VERSION="${VERSION_PREFIX_INPUT}.${GITHUB_RUN_NUMBER}"
+
+            if [[ "${REF_NAME}" != "main" ]]; then
+                SAFE_BRANCH="$(echo "${REF_NAME}" | tr '/' '-')"
+                BRANCH_SUFFIX="-${SAFE_BRANCH}"
+              fi
+          fi
+
+          APP_NAME="${BASE_APP_NAME}-${VERSION}${BRANCH_SUFFIX}"
+          ARTIFACT_PATH="build/Android/${APP_NAME}.apk"
+
+          echo "BASE_APP_NAME=${BASE_APP_NAME}" >> "$GITHUB_ENV"
+          echo "VERSION_PREFIX_INPUT=${VERSION_PREFIX_INPUT}" >> "$GITHUB_ENV"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "SAFE_BRANCH=${SAFE_BRANCH}" >> "$GITHUB_ENV"
+          echo "BRANCH_SUFFIX=${BRANCH_SUFFIX}" >> "$GITHUB_ENV"
+          echo "APP_NAME=${APP_NAME}" >> "$GITHUB_ENV"
+          echo "ARTIFACT_PATH=${ARTIFACT_PATH}" >> "$GITHUB_ENV"
+          echo "SHOULD_UPLOAD=${SHOULD_UPLOAD}" >> "$GITHUB_ENV"
+
       # CLI call to simulated build process
       - name: Run Build
         run: |
-          ./build.sh --platform Android --project-name "$APP_NAME"
+          ./build.sh --platform Android --project-name "$APP_NAME" --version "$VERSION"
 
       # CLI call to simulated upload process
       - name: Upload
+        if: github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && env.SHOULD_UPLOAD == 'true'
         run: |
-          ./upload.sh android "build/Android/$APP_NAME.apk"
+          ./upload.sh android "$ARTIFACT_PATH"
