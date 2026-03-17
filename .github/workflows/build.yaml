@@ -85,7 +85,7 @@ jobs:
 
             git fetch origin main --quiet
 
-            # Tagged releases should only upload if the tagged commit belongs to main 
+            # Tagged releases should only upload if the tagged commit belongs to main
             # (production)
             if git merge-base --is-ancestor "${GITHUB_SHA}" "origin/main"; then
               SHOULD_UPLOAD="true"
@@ -94,27 +94,27 @@ jobs:
             VERSION="${VERSION_PREFIX_INPUT}.${GITHUB_RUN_NUMBER}"
 
             if [[ "${REF_NAME}" != "main" ]]; then
-                SAFE_BRANCH="$(echo "${REF_NAME}" | tr '/' '-')"
-                BRANCH_SUFFIX="-${SAFE_BRANCH}"
-              fi
+              SAFE_BRANCH="$(echo "${REF_NAME}" | tr '/' '-')"
+              BRANCH_SUFFIX="-${SAFE_BRANCH}"
+            fi
           fi
 
-          APP_NAME="${BASE_APP_NAME}-${VERSION}${BRANCH_SUFFIX}"
-          ARTIFACT_PATH="build/Android/${APP_NAME}.apk"
+          PROJECT_NAME="${BASE_APP_NAME}${BRANCH_SUFFIX}"
+          ARTIFACT_NAME="${PROJECT_NAME}-${VERSION}"
+          ARTIFACT_PATH="build/Android/${ARTIFACT_NAME}.apk"
 
-          echo "BASE_APP_NAME=${BASE_APP_NAME}" >> "$GITHUB_ENV"
-          echo "VERSION_PREFIX_INPUT=${VERSION_PREFIX_INPUT}" >> "$GITHUB_ENV"
+          echo "PROJECT_NAME=${PROJECT_NAME}" >> "$GITHUB_ENV"
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
           echo "SAFE_BRANCH=${SAFE_BRANCH}" >> "$GITHUB_ENV"
           echo "BRANCH_SUFFIX=${BRANCH_SUFFIX}" >> "$GITHUB_ENV"
-          echo "APP_NAME=${APP_NAME}" >> "$GITHUB_ENV"
+          echo "ARTIFACT_NAME=${ARTIFACT_NAME}" >> "$GITHUB_ENV"
           echo "ARTIFACT_PATH=${ARTIFACT_PATH}" >> "$GITHUB_ENV"
           echo "SHOULD_UPLOAD=${SHOULD_UPLOAD}" >> "$GITHUB_ENV"
 
       # CLI call to simulated build process
       - name: Run Build
         run: |
-          ./build.sh --platform Android --project-name "$APP_NAME" --version "$VERSION"
+          ./build.sh --platform Android --project-name "$PROJECT_NAME" --version "$VERSION"
 
       # CLI call to simulated upload process
       - name: Upload
