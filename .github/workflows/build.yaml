@@ -268,7 +268,7 @@ jobs:
             UPLOAD_PLATFORM="ios"
           fi
 
-          ARTIFACT=$(ls ./build/${{ matrix.platform }}/*.apk ./build/${{ matrix.platform }}/*.ipa 2>/dev/null | head -1)
+          ARTIFACT=$(find ./build/${{ matrix.platform }} -type f \( -name "*.apk" -o -name "*.ipa" \) | head -1)
 
           if [[ -z "$ARTIFACT" ]]; then
             echo "[ERROR] No artifact found for ${PLATFORM}"
@@ -310,7 +310,7 @@ jobs:
 
       - name: Run dynamic tests
         run: |
-          ARTIFACT=$(ls ./build/${{ matrix.platform }}/*.apk ./build/${{ matrix.platform }}/*.ipa 2>/dev/null | head -1)
+          ARTIFACT=$(find ./build/${{ matrix.platform }} -type f \( -name "*.apk" -o -name "*.ipa" \) | head -1)
 
           if [[ -z "$ARTIFACT" ]]; then
             echo "[ERROR] No artifact found for ${PLATFORM}"
@@ -362,7 +362,7 @@ jobs:
           if [[ "${PLATFORM}" == "iOS" ]]; then
             UPLOAD_PLATFORM="ios"
           fi
-          ARTIFACT=$(ls ./build/${{ matrix.platform }}/*.apk ./build/${{ matrix.platform }}/*.ipa 2>/dev/null | head -1)
+          ARTIFACT=$(find ./build/${{ matrix.platform }} -type f \( -name "*.apk" -o -name "*.ipa" \) | head -1)
 
           if [[ -z "$ARTIFACT" ]]; then
             echo "[ERROR] No artifact found for ${PLATFORM}"
@@ -413,7 +413,7 @@ jobs:
           if [[ "${PLATFORM}" == "iOS" ]]; then
             UPLOAD_PLATFORM="ios"
           fi
-          ARTIFACT=$(ls ./build/${{ matrix.platform }}/*.apk ./build/${{ matrix.platform }}/*.ipa 2>/dev/null | head -1)
+          ARTIFACT=$(find ./build/${{ matrix.platform }} -type f \( -name "*.apk" -o -name "*.ipa" \) | head -1)
 
           if [[ -z "$ARTIFACT" ]]; then
             echo "[ERROR] No artifact found for ${PLATFORM}"
