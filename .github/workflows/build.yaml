@@ -279,9 +279,9 @@ jobs:
 
   # QA tests
   # Dynamic tests to run after QA deployment.
-  # All must pass before pre-prod gate opens.
+  # All things (tests) must pass ... before pre-prod gate opens.
 
-  qa_test:
+  qa_tests:
     needs: deploy_qa
     if: github.event_name == 'push' && github.ref_type == 'branch' && github.ref_name == 'main'
     runs-on: ubuntu-latest
@@ -305,10 +305,119 @@ jobs:
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
-          name:  build-${{ matrix.platform }}-${{ github.run_id }}
+          name: build-${{ matrix.platform }}-${{ github.run_id }}
           path: ./cli/build/${{ matrix.platform }}
 
       - name: Run dynamic tests
         run: |
           ARTIFACT=$(ls ./build/${{ matrix.platform }}/*.apk ./build/${{ matrix.platform }}/*.ipa 2>/dev/null | head -1)
+
+          if [[ -z "$ARTIFACT" ]]; then
+            echo "[ERROR] No artifact found for ${PLATFORM}"
+            exit 1
+          fi
+
           ./scan_dynamic.sh --platform "${{ matrix.platform }}" --artifact "$ARTIFACT"    
+
+  # Deploy to pre-prod
+  # Manual gate - QA lead signs off in GitHub environments UI.
+  # Pre-prod mirrors the production deployment path and acts as the final validation stage before production promotion.
+  
+  deploy_preprod:
+    needs: qa_tests
+    if: github.event_name == 'push' && github.ref_type == 'branch' && github.ref_name == 'main'
+    runs-on: ubuntu-latest
+ 
+    strategy:
+      matrix:
+        platform: [Android, iOS]
+ 
+    environment: preprod
+ 
+    env:
+      UPLOAD_TOKEN: ${{ secrets.UPLOAD_TOKEN }}
+      PLATFORM: ${{ matrix.platform }}
+ 
+    defaults:
+      run:
+        working-directory: ./cli
+ 
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+ 
+      - name: Make scripts executable
+        run: chmod +x upload.sh
+ 
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-${{ matrix.platform }}-${{ github.run_id }}
+          path: ./cli/build/${{ matrix.platform }}
+ 
+      - name: Deploy to pre-prod
+        shell: bash
+        run: |
+          UPLOAD_PLATFORM="android"
+          if [[ "${PLATFORM}" == "iOS" ]]; then
+            UPLOAD_PLATFORM="ios"
+          fi
+          ARTIFACT=$(ls ./build/${{ matrix.platform }}/*.apk ./build/${{ matrix.platform }}/*.ipa 2>/dev/null | head -1)
+
+          if [[ -z "$ARTIFACT" ]]; then
+            echo "[ERROR] No artifact found for ${PLATFORM}"
+            exit 1
+          fi
+
+          ./upload.sh "$UPLOAD_PLATFORM" "$ARTIFACT"
+
+  # Deploy to production!
+  # Manual gate - stakeholders sign off in Github environments.
+
+  deploy_prod:
+    needs: deploy_preprod
+    if: github.event_name == 'push' && github.ref_type == 'branch' && github.ref_name == 'main'
+    runs-on: ubuntu-latest
+ 
+    strategy:
+      matrix:
+        platform: [Android, iOS]
+ 
+    environment: prod
+ 
+    env:
+      UPLOAD_TOKEN: ${{ secrets.UPLOAD_TOKEN }}
+      PLATFORM: ${{ matrix.platform }}
+ 
+    defaults:
+      run:
+        working-directory: ./cli
+ 
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+ 
+      - name: Make scripts executable
+        run: chmod +x upload.sh
+ 
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-${{ matrix.platform }}-${{ github.run_id }}
+          path: ./cli/build/${{ matrix.platform }}
+ 
+      - name: Deploy to production
+        shell: bash
+        run: |
+          UPLOAD_PLATFORM="android"
+          if [[ "${PLATFORM}" == "iOS" ]]; then
+            UPLOAD_PLATFORM="ios"
+          fi
+          ARTIFACT=$(ls ./build/${{ matrix.platform }}/*.apk ./build/${{ matrix.platform }}/*.ipa 2>/dev/null | head -1)
+
+          if [[ -z "$ARTIFACT" ]]; then
+            echo "[ERROR] No artifact found for ${PLATFORM}"
+            exit 1
+          fi
+
+          ./upload.sh "$UPLOAD_PLATFORM" "$ARTIFACT"
