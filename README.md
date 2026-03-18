@@ -29,7 +29,7 @@ At each stage of the assignment, all previous features must still work. To be co
 
 Please keep notes of the issues you found along the way and what you fix.
 
-This is an open-book assignment and you are welcome to use any resources or mateirals you deem necessary to complete it.
+This is an open-book assignment and you are welcome to use any resources or materials you deem necessary to complete it.
 
 > **⚠️ Warning:**
 > <br>The build and upload scripts that the action makes calls to in the `cli` directory are designed to simulate external 3rd party processes and ***should not be modified***.
