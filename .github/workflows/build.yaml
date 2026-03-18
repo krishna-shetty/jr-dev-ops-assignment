@@ -55,7 +55,7 @@ jobs:
         run: chmod +x scan_static.sh
 
       - name: Run static analysis
-        run: ./scan_static.sh --platform "${{ matrix.platform}}"
+        run: ./scan_static.sh --platform "${{ matrix.platform }}"
 
   build:
     needs: static-analysis
@@ -66,7 +66,6 @@ jobs:
         platform: [Android, iOS]
 
     env:
-      UPLOAD_TOKEN: ${{ secrets.UPLOAD_TOKEN }}
       PLATFORM: ${{ matrix.platform }}
       PROFILE: ${{ inputs.profile || 'false' }}
 
@@ -83,7 +82,6 @@ jobs:
       - name: Make scripts executable
         run: |
           chmod +x build.sh
-          chmod +x upload.sh
 
       # Follows semantic versioning 2.0.0 in spirit, using MAJOR.MINOR tags
       # (e.g. v1.2) as explicit engineer-owned release intent.
@@ -119,7 +117,6 @@ jobs:
 
           BRANCH=""
           BRANCH_SUFFIX=""
-          SHOULD_UPLOAD="false"
 
           git fetch origin main --quiet
 
@@ -155,13 +152,6 @@ jobs:
 
           VERSION="${VERSION_PREFIX}.${PATCH}"
 
-          # Upload policy:
-          # - upload on any push to main
-          # - do not upload for PRs or non-main branch pushes
-          if [[ "${EVENT_NAME}" == "push" && "${REF_TYPE}" == "branch" && "${BRANCH}" == "main" ]]; then
-            SHOULD_UPLOAD="true"
-          fi
-
           # Naming policy:
           # - main uses clean artifact naming
           # - non-main branches get a suffix
@@ -189,7 +179,6 @@ jobs:
           echo "BRANCH=${BRANCH}"               >> "$GITHUB_ENV"
           echo "ARTIFACT_NAME=${ARTIFACT_NAME}" >> "$GITHUB_ENV"
           echo "ARTIFACT_PATH=${ARTIFACT_PATH}" >> "$GITHUB_ENV"
-          echo "SHOULD_UPLOAD=${SHOULD_UPLOAD}" >> "$GITHUB_ENV"
 
           # ── Job summary ────────────────────────────────────────────────────
           # formatted with Claude Sonnet
@@ -200,7 +189,6 @@ jobs:
           echo "| Branch   | \`${BRANCH}\` |"            >> "$GITHUB_STEP_SUMMARY"
           echo "| Version  | \`${VERSION}\` |"           >> "$GITHUB_STEP_SUMMARY"
           echo "| App      | \`${PROJECT_NAME}\` |"      >> "$GITHUB_STEP_SUMMARY"
-          echo "| Upload   | \`${SHOULD_UPLOAD}\` |"     >> "$GITHUB_STEP_SUMMARY"
           echo "| Trigger  | \`${EVENT_NAME}\` |"        >> "$GITHUB_STEP_SUMMARY"
 
       # CLI call to simulated build process
@@ -231,15 +219,60 @@ jobs:
           path: ./cli/build/${{ env.PLATFORM }}/*.pro
           if-no-files-found: error
       
-      # CLI call to simulated upload process
-      - name: Upload
-        if: env.SHOULD_UPLOAD == 'true'
+  # Deploy to QA
+  # Automatic deployment to QA on every push to main.
+  # No manual approval here - QA picks up the build from this environment.
+  # The pipeline then promotes through QA -> pre-prod -> prod,
+  # with manual validation required for pre-prod and prod.
+
+  deploy_qa:
+    needs: build
+    # Upload policy:
+    # - upload on any push to main
+    # - do not upload for PRs or non-main branch pushes
+    if: github.event_name == 'push' && github.ref_type == 'branch' && github.ref_name == 'main'
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        platform: [Android, iOS]
+
+    environment: qa
+
+    env:
+      UPLOAD_TOKEN: ${{ secrets.UPLOAD_TOKEN }}
+      PLATFORM: ${{ matrix.platform }}
+
+    defaults:
+      run:
+        working-directory: ./cli
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Make scripts executable
+        run: chmod +x upload.sh
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-${{ matrix.platform }}-${{ github.run_id }}
+          path: ./cli/build/${{ matrix.platform }}
+
+      - name: Deploy to QA
         shell: bash
         run: |
           UPLOAD_PLATFORM="android"
-
-          if [[ "${PLATFORM}" == "iOS" ]]; then
+          if [[ "$PLATFORM" == "iOS" ]]; then
             UPLOAD_PLATFORM="ios"
           fi
 
-          ./upload.sh "$UPLOAD_PLATFORM" "$ARTIFACT_PATH"
+          ARTIFACT=$(ls ./build/${{ matrix.platform }}/*.apk ./build/${{ matrix.platform }}/*.ipa 2>/dev/null | head -1)
+
+          if [[ -z "$ARTIFACT" ]]; then
+            echo "[ERROR] No artifact found for ${PLATFORM}"
+            exit 1
+          fi
+
+          ./upload.sh "$UPLOAD_PLATFORM" "$ARTIFACT"
