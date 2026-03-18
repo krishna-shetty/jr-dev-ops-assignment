@@ -276,3 +276,39 @@ jobs:
           fi
 
           ./upload.sh "$UPLOAD_PLATFORM" "$ARTIFACT"
+
+  # QA tests
+  # Dynamic tests to run after QA deployment.
+  # All must pass before pre-prod gate opens.
+
+  qa_test:
+    needs: deploy_qa
+    if: github.event_name == 'push' && github.ref_type == 'branch' && github.ref_name == 'main'
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        platform: [Android, iOS]
+
+    defaults:
+      run:
+        working-directory: ./cli
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Make scripts executable
+        run: |
+          chmod +x scan_dynamic.sh
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name:  build-${{ matrix.platform }}-${{ github.run_id }}
+          path: ./cli/build/${{ matrix.platform }}
+
+      - name: Run dynamic tests
+        run: |
+          ARTIFACT=$(ls ./build/${{ matrix.platform }}/*.apk ./build/${{ matrix.platform }}/*.ipa 2>/dev/null | head -1)
+          ./scan_dynamic.sh --platform "${{ matrix.platform }}" --artifact "$ARTIFACT"    
